@@ -89,6 +89,11 @@ class ProjectManager:
             content
         )
         
+        # 生成规整化的评审报告
+        formatted_report = self.review_engine.generate_formatted_review_report(
+            self.state.current_phase
+        )
+        
         # 更新项目状态
         self.state.phase_scores.append(review_result['score'])
         self.state.updated_at = datetime.now().isoformat()
@@ -116,6 +121,9 @@ class ProjectManager:
         
         # 更新评审历史文件
         self._update_review_history(review_result)
+        
+        # 将规整化报告添加到返回结果中
+        review_result['formatted_report'] = formatted_report
         
         return review_result
     
@@ -1447,30 +1455,36 @@ if __name__ == '__main__':
     
     def _read_phase_output(self) -> str:
         """读取当前阶段的输出文件"""
-        phase_dir = self.phase_outputs_dir / self.state.current_phase.value.lower()
+        phase_name = self.state.current_phase.value
         iteration = self.state.phase_iteration
         
-        # 查找最新的输出文件
+        # 首先尝试查找带版本号的文件
         if self.state.current_phase == Phase.BASIC_DESIGN:
-            file_pattern = f"basic_design_v{iteration + 1}.md"
+            file_patterns = [f"basic_design_v{iteration + 1}.md", f"{phase_name}.md"]
         elif self.state.current_phase == Phase.DETAIL_DESIGN:
-            file_pattern = f"detail_design_v{iteration + 1}.md"
+            file_patterns = [f"detail_design_v{iteration + 1}.md", f"{phase_name}.md"]
         elif self.state.current_phase == Phase.DEVELOPMENT:
-            file_pattern = f"implementation_v{iteration + 1}.py"
+            file_patterns = [f"implementation_v{iteration + 1}.py", f"{phase_name}.py", f"{phase_name}.md"]
         elif self.state.current_phase == Phase.UNIT_TEST:
-            file_pattern = f"unit_test_v{iteration + 1}.py"
+            file_patterns = [f"unit_test_v{iteration + 1}.py", f"{phase_name}.py", f"{phase_name}.md"]
         elif self.state.current_phase == Phase.INTEGRATION_TEST:
-            file_pattern = f"integration_test_v{iteration + 1}.py"
+            file_patterns = [f"integration_test_v{iteration + 1}.py", f"{phase_name}.py", f"{phase_name}.md"]
         else:
-            file_pattern = f"output_v{iteration + 1}.md"
+            file_patterns = [f"output_v{iteration + 1}.md", f"{phase_name}.md"]
         
-        output_file = phase_dir / file_pattern
+        # 尝试查找文件
+        for file_pattern in file_patterns:
+            output_file = self.phase_outputs_dir / file_pattern
+            if output_file.exists():
+                try:
+                    with open(output_file, 'r', encoding='utf-8') as f:
+                        return f.read()
+                except Exception as e:
+                    print(f"读取文件失败: {e}")
+                    continue
         
-        if output_file.exists():
-            with open(output_file, 'r', encoding='utf-8') as f:
-                return f.read()
-        else:
-            return f"# {self.state.current_phase.value} 阶段输出\n\n当前阶段暂无输出内容。"
+        # 如果找不到文件，返回默认内容
+        return f"# {self.state.current_phase.value} 阶段输出\n\n当前阶段暂无输出内容。"
     
     def _update_review_history(self, review_result: Dict[str, Any]) -> None:
         """更新评审历史文件"""

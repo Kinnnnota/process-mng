@@ -20,6 +20,8 @@ class ReviewEngine:
     def __init__(self):
         self.current_issues: List[Issue] = []
         self.current_improvements: List[str] = []
+        self.current_content: str = ""
+        self.current_file_path: Optional[str] = None
     
     def evaluate(self, phase: Phase, content: str, file_path: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -35,6 +37,8 @@ class ReviewEngine:
         """
         self.current_issues = []
         self.current_improvements = []
+        self.current_content = content
+        self.current_file_path = file_path
         
         # 根据阶段获取检查清单
         checklist = PhaseConfig.get_checklist_for_phase(phase)
@@ -90,6 +94,288 @@ class ReviewEngine:
             return f"Major问题：{major_issues[0].description}"
         
         return self.current_improvements[0]
+    
+    def generate_detailed_analysis(self, issue: Issue) -> Dict[str, str]:
+        """
+        生成详细的问题分析
+        
+        Args:
+            issue: 问题对象
+            
+        Returns:
+            包含四个维度的详细分析
+        """
+        analysis = {
+            'problem_code': self._extract_problem_code(issue),
+            'problem_reason': self._analyze_problem_reason(issue),
+            'solution_method': self._provide_solution_method(issue),
+            'precautions': self._list_precautions(issue)
+        }
+        return analysis
+    
+    def _extract_problem_code(self, issue: Issue) -> str:
+        """提取问题代码片段"""
+        if not self.current_content:
+            return "无法提取代码片段"
+        
+        lines = self.current_content.split('\n')
+        
+        # 如果有行号，提取该行及上下文
+        if issue.line_number and 0 < issue.line_number <= len(lines):
+            start_line = max(0, issue.line_number - 3)
+            end_line = min(len(lines), issue.line_number + 2)
+            context_lines = lines[start_line:end_line]
+            
+            code_snippet = "\n".join([
+                f"{i+start_line+1:4d}: {line}" 
+                for i, line in enumerate(context_lines)
+            ])
+            return code_snippet
+        
+        # 根据问题描述关键词查找相关代码
+        keywords = self._extract_keywords_from_description(issue.description)
+        for i, line in enumerate(lines):
+            if any(keyword in line for keyword in keywords):
+                start_line = max(0, i - 2)
+                end_line = min(len(lines), i + 3)
+                context_lines = lines[start_line:end_line]
+                
+                code_snippet = "\n".join([
+                    f"{j+start_line+1:4d}: {line}" 
+                    for j, line in enumerate(context_lines)
+                ])
+                return code_snippet
+        
+        return "相关代码片段未找到"
+    
+    def _extract_keywords_from_description(self, description: str) -> List[str]:
+        """从问题描述中提取关键词"""
+        keywords = []
+        
+        # 根据问题类型提取关键词
+        if "函数" in description or "方法" in description:
+            keywords.extend(["def ", "class ", "return"])
+        elif "异常" in description or "错误" in description:
+            keywords.extend(["try", "except", "raise", "error"])
+        elif "性能" in description:
+            keywords.extend(["for", "while", "import", "time"])
+        elif "规范" in description:
+            keywords.extend(["def", "class", "import", "from"])
+        elif "测试" in description:
+            keywords.extend(["test", "assert", "def test"])
+        
+        return keywords
+    
+    def _analyze_problem_reason(self, issue: Issue) -> str:
+        """分析问题原因"""
+        description = issue.description.lower()
+        
+        if "功能" in description or "实现" in description:
+            return "核心功能实现不完整或逻辑错误，可能导致系统无法正常工作"
+        elif "异常" in description or "错误" in description:
+            return "缺少异常处理机制，可能导致程序崩溃或数据丢失"
+        elif "性能" in description:
+            return "算法复杂度高或资源使用不当，可能影响系统响应速度"
+        elif "规范" in description:
+            return "代码风格不符合PEP 8规范，影响代码可读性和维护性"
+        elif "测试" in description:
+            return "测试覆盖不全面，无法保证代码质量和功能正确性"
+        elif "架构" in description:
+            return "系统架构设计不合理，可能影响系统的可扩展性和维护性"
+        elif "接口" in description:
+            return "接口定义不清晰，可能导致模块间通信问题"
+        else:
+            return "代码质量需要改进，可能影响系统的稳定性和可维护性"
+    
+    def _provide_solution_method(self, issue: Issue) -> str:
+        """提供修改方法"""
+        description = issue.description.lower()
+        
+        if "功能" in description or "实现" in description:
+            return """1. 检查核心业务逻辑是否正确
+2. 确保所有功能点都有对应的实现
+3. 添加必要的参数验证和边界条件处理
+4. 完善函数返回值处理"""
+        elif "异常" in description or "错误" in description:
+            return """1. 添加try-except异常处理块
+2. 对可能出错的操作进行防御性编程
+3. 提供有意义的错误信息
+4. 记录错误日志便于调试"""
+        elif "性能" in description:
+            return """1. 优化算法复杂度
+2. 减少不必要的循环和计算
+3. 使用更高效的数据结构
+4. 考虑缓存机制"""
+        elif "规范" in description:
+            return """1. 遵循PEP 8编码规范
+2. 统一命名风格（snake_case）
+3. 添加适当的空行和注释
+4. 控制函数和类的复杂度"""
+        elif "测试" in description:
+            return """1. 增加单元测试用例
+2. 覆盖边界条件和异常情况
+3. 提高测试覆盖率
+4. 添加集成测试"""
+        elif "架构" in description:
+            return """1. 重新设计系统架构
+2. 明确模块职责和边界
+3. 降低模块间耦合度
+4. 提高系统可扩展性"""
+        elif "接口" in description:
+            return """1. 明确接口参数和返回值
+2. 定义清晰的API文档
+3. 统一接口命名规范
+4. 添加接口版本控制"""
+        else:
+            return """1. 分析具体问题原因
+2. 制定改进计划
+3. 逐步优化代码质量
+4. 进行充分测试验证"""
+    
+    def _list_precautions(self, issue: Issue) -> str:
+        """列出注意事项"""
+        description = issue.description.lower()
+        
+        precautions = []
+        
+        if "功能" in description or "实现" in description:
+            precautions.extend([
+                "修改前需要充分理解业务逻辑",
+                "确保修改不影响其他功能模块",
+                "需要同步更新相关文档",
+                "修改后必须进行回归测试"
+            ])
+        elif "异常" in description or "错误" in description:
+            precautions.extend([
+                "异常处理不要过于宽泛",
+                "避免在异常处理中隐藏真正的错误",
+                "确保异常信息对用户友好",
+                "注意异常处理的性能影响"
+            ])
+        elif "性能" in description:
+            precautions.extend([
+                "性能优化前需要先进行性能分析",
+                "避免过度优化影响代码可读性",
+                "注意内存泄漏和资源释放",
+                "性能改进需要量化验证"
+            ])
+        elif "规范" in description:
+            precautions.extend([
+                "代码规范修改需要团队统一",
+                "避免为了规范而规范",
+                "保持代码风格的一致性",
+                "使用自动化工具检查规范"
+            ])
+        elif "测试" in description:
+            precautions.extend([
+                "测试用例需要维护和更新",
+                "避免测试用例之间的依赖",
+                "测试数据需要清理和隔离",
+                "注意测试环境的配置"
+            ])
+        elif "架构" in description:
+            precautions.extend([
+                "架构修改需要评估影响范围",
+                "确保向后兼容性",
+                "需要充分的迁移计划",
+                "考虑性能和稳定性影响"
+            ])
+        elif "接口" in description:
+            precautions.extend([
+                "接口修改需要版本控制",
+                "确保接口的向后兼容",
+                "需要更新接口文档",
+                "注意接口的安全性"
+            ])
+        else:
+            precautions.extend([
+                "修改前需要充分评估影响",
+                "确保修改的可回滚性",
+                "需要充分的测试验证",
+                "注意代码的可维护性"
+            ])
+        
+        return "\n".join([f"- {precaution}" for precaution in precautions])
+    
+    def generate_formatted_review_report(self, phase: Phase) -> str:
+        """
+        生成格式化的评审报告
+        
+        Args:
+            phase: 当前阶段
+            
+        Returns:
+            格式化的评审报告
+        """
+        report = []
+        report.append(f"# {phase.value} 阶段评审报告")
+        report.append(f"**评审时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report.append(f"**评审阶段**: {phase.value}")
+        report.append("")
+        
+        # 添加总分
+        total_score = self.calculate_score(self._evaluate_content(phase, self.current_content, PhaseConfig.get_checklist_for_phase(phase)))
+        report.append(f"**总分**: {total_score}分")
+        report.append("")
+        
+        # 添加检查项得分
+        scores = self._evaluate_content(phase, self.current_content, PhaseConfig.get_checklist_for_phase(phase))
+        report.append("**检查项得分**:")
+        for item, score in scores.items():
+            report.append(f"- {item}: {score}分")
+        report.append("")
+        
+        # 添加发现的问题
+        if self.current_issues:
+            report.append("**发现的问题**:")
+            for issue in self.current_issues:
+                report.append(f"- [{issue.level.value}] {issue.description}")
+            report.append("")
+        
+        # 添加最重要的改进建议（包含详细分析）
+        if self.current_issues:
+            most_important_issue = self._get_most_important_issue()
+            if most_important_issue:
+                report.append("**最重要的改进建议**:")
+                report.append("")
+                
+                analysis = self.generate_detailed_analysis(most_important_issue)
+                
+                report.append("## 问题分析")
+                report.append("")
+                report.append("### 1. 问题代码")
+                report.append("```")
+                report.append(analysis['problem_code'])
+                report.append("```")
+                report.append("")
+                report.append("### 2. 问题原因")
+                report.append(analysis['problem_reason'])
+                report.append("")
+                report.append("### 3. 修改方法")
+                report.append(analysis['solution_method'])
+                report.append("")
+                report.append("### 4. 注意事项")
+                report.append(analysis['precautions'])
+        else:
+            report.append("**最重要的改进建议**: 当前阶段工作质量良好，无需改进")
+        
+        return "\n".join(report)
+    
+    def _get_most_important_issue(self) -> Optional[Issue]:
+        """获取最重要的问题"""
+        critical_issues = self.get_critical_issues()
+        if critical_issues:
+            return critical_issues[0]
+        
+        major_issues = self.get_major_issues()
+        if major_issues:
+            return major_issues[0]
+        
+        minor_issues = self.get_minor_issues()
+        if minor_issues:
+            return minor_issues[0]
+        
+        return None
     
     def calculate_score(self, checklist: Dict[str, float]) -> float:
         """计算总分（100分制）"""
