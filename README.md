@@ -402,25 +402,5 @@ manager = ProjectManager("debug_project")
 - 内置评审引擎
 - 提供命令行界面
 
-## 🤝 贡献指南
 
-1. Fork 项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 打开 Pull Request
-
-## 📄 许可证
-
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
-
-## 📞 联系方式
-
-如有问题或建议，请通过以下方式联系：
-- 提交 Issue
-- 发送邮件
-- 参与讨论
-
----
-
-**注意**：本系统支持完全自动化的开发流程，推荐使用自动化工作流来最大化减少手动干预。
+**注意**：本系统意在创建支持完全自动化的开发流程，推荐使用自动化工作流来最大化减少手动干预。
