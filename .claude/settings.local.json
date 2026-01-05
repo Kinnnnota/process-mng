@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python test_blackbox_review.py:*)",
+      "Bash(dir:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: 实现黑箱评审架构并简化为3阶段流程\n\n主要变更:\n1. 新增IssueStorage文件存储系统,实现真正的黑箱评审\n   - 所有Issue存储在独立的JSON文件中\n   - 支持按阶段/迭代查询和统计\n   - ProjectState移除blocked_issues字段\n\n2. ReviewEngine重构为完全无状态\n   - 所有实例变量移除,使用局部变量\n   - 所有辅助方法改为@staticmethod\n   - 每次评审都是独立的黑箱过程\n\n3. 简化阶段流程\\(移除测试阶段\\)\n   - 仅保留BASIC_DESIGN/DETAIL_DESIGN/DEVELOPMENT\n   - 移除UNIT_TEST和INTEGRATION_TEST\n   - 测试环节留待人工确认\n\n4. 新增PromptManager提示词管理系统\n   - 支持动态加载评审标准/生成模板/工作流\n   - 集中管理所有提示词配置\n\n5. 文档整理\n   - 删除ai_development_guide.md等旧文档\n   - 合并所有文档到README.md\n   - 更新说明为3阶段+黑箱评审机制\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  }
+}

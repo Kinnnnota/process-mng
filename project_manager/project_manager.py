@@ -14,6 +14,7 @@ from .models import (
 )
 from .review_engine import ReviewEngine
 from .requirements_engine import RequirementsEngine
+from .issue_storage import IssueStorage
 
 
 class ProjectManager:
@@ -37,10 +38,13 @@ class ProjectManager:
         
         # 初始化评审引擎
         self.review_engine = ReviewEngine()
-        
+
         # 初始化要件定义引擎
         self.requirements_engine = RequirementsEngine()
-        
+
+        # 初始化Issue存储管理器
+        self.issue_storage = IssueStorage(self.project_dir)
+
         # 加载或创建项目状态
         self.state = self._load_or_create_state()
     
@@ -72,59 +76,75 @@ class ProjectManager:
     
     def review_phase(self) -> Dict[str, Any]:
         """
-        评审当前阶段成果
-        
+        评审当前阶段成果 (黑箱评审 - 不依赖历史)
+
         Returns:
             评审结果字典
         """
         if self.state.current_mode != Mode.REVIEWER:
             raise ValueError("当前不是评审模式")
-        
+
         # 读取当前阶段的输出文件
         content = self._read_phase_output()
-        
-        # 执行评审
+
+        # 执行黑箱评审 - 不传递任何历史信息
         review_result = self.review_engine.evaluate(
-            self.state.current_phase, 
+            self.state.current_phase,
             content
         )
-        
-        # 生成规整化的评审报告
-        formatted_report = self.review_engine.generate_formatted_review_report(
-            self.state.current_phase
+
+        # 将issue对象转换
+        issues = [Issue(**issue) for issue in review_result['issues']]
+
+        # 保存本次评审的issue到文件
+        self.issue_storage.save_review_issues(
+            phase=self.state.current_phase,
+            iteration=self.state.phase_iteration + 1,
+            issues=issues
         )
-        
+
+        # 更新阻塞issue文件
+        critical_issues = [issue for issue in issues if issue.level == IssueLevel.CRITICAL]
+        if critical_issues:
+            self.issue_storage.add_blocked_issues(critical_issues)
+
+        # 生成规整化的评审报告
+        formatted_report = ReviewEngine.generate_formatted_review_report(
+            phase=self.state.current_phase,
+            issues=issues,
+            checklist=review_result['checklist'],
+            total_score=review_result['score'],
+            content=content
+        )
+
         # 更新项目状态
         self.state.phase_scores.append(review_result['score'])
         self.state.updated_at = datetime.now().isoformat()
-        
-        # 添加评审历史
+
+        # 添加评审历史 (不包含issue,从文件读取)
         review_result_obj = ReviewResult(
             score=review_result['score'],
-            issues=[Issue(**issue) for issue in review_result['issues']],
+            issues=issues,  # 仅用于历史记录
             improvements=review_result['improvements'],
             checklist=review_result['checklist'],
-            review_date=review_result['review_date']
+            review_date=review_result['review_date'],
+            phase=self.state.current_phase.value,
+            iteration=self.state.phase_iteration + 1
         )
         self.state.review_history.append(review_result_obj)
-        
-        # 更新阻塞问题
-        critical_issues = [issue for issue in review_result_obj.issues 
-                          if issue.level == IssueLevel.CRITICAL]
-        self.state.blocked_issues.extend(critical_issues)
-        
-        # 更新改进建议
-        self.state.improvements.extend(review_result['improvements'])
-        
+
+        # 更新改进建议 (仅保留最新的)
+        self.state.improvements = review_result['improvements']
+
         # 保存状态
         self._save_state()
-        
+
         # 更新评审历史文件
         self._update_review_history(review_result)
-        
+
         # 将规整化报告添加到返回结果中
         review_result['formatted_report'] = formatted_report
-        
+
         return review_result
     
     def check_phase_transition(self) -> bool:
@@ -223,8 +243,8 @@ class ProjectManager:
     
     def get_current_status(self) -> Dict[str, Any]:
         """
-        获取当前项目状态
-        
+        获取当前项目状态 (从文件读取issue信息)
+
         Returns:
             项目状态字典
         """
@@ -235,7 +255,7 @@ class ProjectManager:
             'current_mode': self.state.current_mode.value,
             'status': self.state.status,
             'latest_score': self.state.phase_scores[-1] if self.state.phase_scores else None,
-            'blocked_issues_count': len(self.state.blocked_issues),
+            'blocked_issues_count': self.issue_storage.get_blocked_issues_count(),  # 从文件读取
             'improvements_count': len(self.state.improvements),
             'review_count': len(self.state.review_history),
             'from_rollback': self.state.from_rollback,
@@ -245,6 +265,19 @@ class ProjectManager:
             'created_at': self.state.created_at,
             'updated_at': self.state.updated_at
         }
+
+    def get_blocked_issues(self) -> List[Issue]:
+        """
+        获取当前所有阻塞的issue (从文件读取)
+
+        Returns:
+            阻塞issue列表
+        """
+        return self.issue_storage.load_blocked_issues()
+
+    def clear_blocked_issues(self) -> None:
+        """清空所有阻塞issue"""
+        self.issue_storage.clear_blocked_issues()
     
     def define_requirements(self, natural_language: str) -> Dict[str, Any]:
         """
@@ -381,7 +414,7 @@ class ProjectManager:
                 # JSON解析错误或文件不存在，创建新状态
                 pass
         
-        # 创建新状态
+        # 创建新状态 (blocked_issues已移除,存储在文件中)
         state = ProjectState(
             project_name=self.project_name,
             current_phase=Phase.BASIC_DESIGN,
@@ -389,7 +422,6 @@ class ProjectManager:
             current_mode=Mode.DEVELOPER,
             status="IN_PROGRESS",
             phase_scores=[],
-            blocked_issues=[],
             improvements=[],
             review_history=[],
             created_at=datetime.now().isoformat()

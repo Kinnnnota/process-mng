@@ -9,12 +9,11 @@ from datetime import datetime
 
 
 class Phase(Enum):
-    """项目阶段枚举"""
+    """项目阶段枚举（简化版 - 仅包含核心开发阶段）"""
     BASIC_DESIGN = "BASIC_DESIGN"
     DETAIL_DESIGN = "DETAIL_DESIGN"
     DEVELOPMENT = "DEVELOPMENT"
-    UNIT_TEST = "UNIT_TEST"
-    INTEGRATION_TEST = "INTEGRATION_TEST"
+    # UNIT_TEST 和 INTEGRATION_TEST 已移除 - 留待人工确认
 
 
 class Mode(Enum):
@@ -228,14 +227,14 @@ class ProjectRequirements:
 
 @dataclass
 class ProjectState:
-    """项目状态数据结构"""
+    """项目状态数据结构 (不包含issue - issue存储在文件中)"""
     project_name: str
     current_phase: Phase
     phase_iteration: int
     current_mode: Mode
     status: str  # READY_FOR_REVIEW, IN_PROGRESS, COMPLETED
     phase_scores: List[float]
-    blocked_issues: List[Issue]
+    # blocked_issues 已移除 - 使用 IssueStorage 从文件读取
     improvements: List[str]
     review_history: List[ReviewResult]
     created_at: str
@@ -262,12 +261,12 @@ class ProjectState:
                 self.phase_history[phase.value] = PhaseHistory()
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典格式"""
+        """转换为字典格式 (不包含blocked_issues - 存储在文件中)"""
         data = asdict(self)
         data['current_phase'] = self.current_phase.value
         data['current_mode'] = self.current_mode.value
         data['phase_scores'] = self.phase_scores
-        data['blocked_issues'] = [issue.to_dict() for issue in self.blocked_issues]
+        # blocked_issues 已移除 - 从 IssueStorage 读取
         data['review_history'] = [result.to_dict() for result in self.review_history]
         data['phase_history'] = {k: v.to_dict() for k, v in self.phase_history.items()}
         data['quality_gates'] = self.quality_gates
@@ -275,21 +274,13 @@ class ProjectState:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ProjectState':
-        """从字典创建实例"""
+        """从字典创建实例 (兼容旧数据,忽略blocked_issues字段)"""
         # 转换枚举类型
         data['current_phase'] = Phase(data['current_phase'])
         data['current_mode'] = Mode(data['current_mode'])
-        
-        # 转换问题列表
-        data['blocked_issues'] = [
-            Issue(
-                level=IssueLevel(issue['level']),
-                description=issue['description'],
-                line_number=issue.get('line_number'),
-                file_path=issue.get('file_path'),
-                created_at=issue.get('created_at')
-            ) for issue in data.get('blocked_issues', [])
-        ]
+
+        # 移除 blocked_issues 字段(如果存在,用于兼容旧数据)
+        data.pop('blocked_issues', None)
         
         # 转换评审历史
         data['review_history'] = [
@@ -369,62 +360,38 @@ class PhaseConfig:
         }
     
     @staticmethod
-    def get_unit_test_checklist() -> Dict[str, float]:
-        """获取单元测试阶段检查项"""
-        return {
-            "覆盖率": 35.0,
-            "边界测试": 30.0,
-            "异常测试": 35.0
-        }
-    
-    @staticmethod
-    def get_integration_test_checklist() -> Dict[str, float]:
-        """获取集成测试阶段检查项"""
-        return {
-            "集成完整性": 40.0,
-            "性能达标": 30.0,
-            "稳定性": 30.0
-        }
-    
-    @staticmethod
     def get_checklist_for_phase(phase: Phase) -> Dict[str, float]:
-        """获取指定阶段的检查项"""
+        """获取指定阶段的检查项（仅核心开发阶段）"""
         checklists = {
             Phase.BASIC_DESIGN: PhaseConfig.get_basic_design_checklist(),
             Phase.DETAIL_DESIGN: PhaseConfig.get_detail_design_checklist(),
-            Phase.DEVELOPMENT: PhaseConfig.get_development_checklist(),
-            Phase.UNIT_TEST: PhaseConfig.get_unit_test_checklist(),
-            Phase.INTEGRATION_TEST: PhaseConfig.get_integration_test_checklist()
+            Phase.DEVELOPMENT: PhaseConfig.get_development_checklist()
         }
         return checklists.get(phase, {})
     
     @staticmethod
     def get_max_iterations(phase: Phase) -> int:
-        """获取阶段最大迭代次数"""
+        """获取阶段最大迭代次数（仅核心开发阶段）"""
         max_iterations = {
             Phase.BASIC_DESIGN: 5,
             Phase.DETAIL_DESIGN: 4,
-            Phase.DEVELOPMENT: 4,
-            Phase.UNIT_TEST: 3,
-            Phase.INTEGRATION_TEST: 3
+            Phase.DEVELOPMENT: 4
         }
         return max_iterations.get(phase, 3)
-    
+
     @staticmethod
     def get_pass_threshold(phase: Phase) -> float:
-        """获取阶段通过阈值"""
+        """获取阶段通过阈值（仅核心开发阶段）"""
         thresholds = {
             Phase.BASIC_DESIGN: 80.0,
             Phase.DETAIL_DESIGN: 80.0,
-            Phase.DEVELOPMENT: 85.0,
-            Phase.UNIT_TEST: 90.0,
-            Phase.INTEGRATION_TEST: 95.0
+            Phase.DEVELOPMENT: 85.0
         }
         return thresholds.get(phase, 80.0)
     
     @staticmethod
     def get_phase_output_format(phase: Phase) -> str:
-        """获取阶段输出格式要求"""
+        """获取阶段输出格式要求（仅核心开发阶段）"""
         formats = {
             Phase.BASIC_DESIGN: """
 输出要求：
@@ -451,37 +418,22 @@ class PhaseConfig:
 - 数据库脚本
 - README文档
 禁止：不涉及测试细节、部署配置
-            """,
-            Phase.UNIT_TEST: """
-输出要求：
-- 测试用例文档
-- 测试代码
-- 测试报告
-禁止：不涉及集成问题、性能优化
-            """,
-            Phase.INTEGRATION_TEST: """
-输出要求：
-- 集成测试方案
-- 性能测试报告
-- 最终测试报告
             """
         }
         return formats.get(phase, "")
     
     @staticmethod
     def can_rollback_to(phase: Phase) -> List[Phase]:
-        """获取可以回退到的阶段"""
+        """获取可以回退到的阶段（仅核心开发阶段）"""
         rollback_rules = {
             Phase.DETAIL_DESIGN: [Phase.BASIC_DESIGN],
-            Phase.DEVELOPMENT: [Phase.DETAIL_DESIGN],
-            Phase.UNIT_TEST: [Phase.DEVELOPMENT],
-            Phase.INTEGRATION_TEST: [Phase.UNIT_TEST]
+            Phase.DEVELOPMENT: [Phase.DETAIL_DESIGN]
         }
         return rollback_rules.get(phase, [])
     
     @staticmethod
     def get_rollback_conditions(phase: Phase) -> List[str]:
-        """获取回退触发条件"""
+        """获取回退触发条件（仅核心开发阶段）"""
         conditions = {
             Phase.DETAIL_DESIGN: [
                 "数据库设计无法支持",
@@ -490,10 +442,6 @@ class PhaseConfig:
             Phase.DEVELOPMENT: [
                 "数据结构无法实现",
                 "算法逻辑漏洞"
-            ],
-            Phase.UNIT_TEST: [
-                "核心功能测试失败",
-                "设计缺陷"
             ]
         }
         return conditions.get(phase, [])

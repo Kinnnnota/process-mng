@@ -10,6 +10,8 @@ from datetime import datetime
 
 from .models import Phase, Mode, ProjectState
 from .project_manager import ProjectManager
+from .prompt_manager import PromptManager
+from .issue_storage import IssueStorage
 
 
 class AIIntegration:
@@ -24,7 +26,7 @@ class AIIntegration:
         """
         self.project_name = project_name
         self.project_manager = ProjectManager(project_name)
-        self.prompts_dir = Path("project_manager/prompts")
+        self.prompt_manager = PromptManager("project_manager/prompts")
         self.config_file = Path("config.yaml")
         
     def get_current_context(self) -> Dict[str, Any]:
@@ -90,25 +92,7 @@ class AIIntegration:
         Returns:
             提示词内容
         """
-        prompt_file = self.prompts_dir / "developer_mode.md"
-        
-        if prompt_file.exists():
-            with open(prompt_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # 根据阶段提取对应的提示词部分
-            if phase == Phase.BASIC_DESIGN:
-                return self._extract_section(content, "设计阶段提示词")
-            elif phase == Phase.DETAIL_DESIGN:
-                return self._extract_section(content, "设计阶段提示词")
-            elif phase == Phase.DEVELOPMENT:
-                return self._extract_section(content, "开发阶段提示词")
-            elif phase == Phase.UNIT_TEST:
-                return self._extract_section(content, "测试阶段提示词")
-            elif phase == Phase.INTEGRATION_TEST:
-                return self._extract_section(content, "测试阶段提示词")
-        
-        return ""
+        return self.prompt_manager.get_generation_template(phase.value)
     
     def get_review_prompt(self, phase: Phase) -> str:
         """
@@ -120,59 +104,9 @@ class AIIntegration:
         Returns:
             提示词内容
         """
-        prompt_file = self.prompts_dir / "reviewer_mode.md"
-        
-        if prompt_file.exists():
-            with open(prompt_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # 根据阶段提取对应的提示词部分
-            if phase == Phase.BASIC_DESIGN:
-                return self._extract_section(content, "设计阶段评审提示词")
-            elif phase == Phase.DETAIL_DESIGN:
-                return self._extract_section(content, "设计阶段评审提示词")
-            elif phase == Phase.DEVELOPMENT:
-                return self._extract_section(content, "开发阶段评审提示词")
-            elif phase == Phase.UNIT_TEST:
-                return self._extract_section(content, "测试阶段评审提示词")
-            elif phase == Phase.INTEGRATION_TEST:
-                return self._extract_section(content, "测试阶段评审提示词")
-        
-        return ""
+        return self.prompt_manager.get_combined_prompt(phase.value, "reviewer")
     
-    def _extract_section(self, content: str, section_name: str) -> str:
-        """
-        从内容中提取指定部分
-        
-        Args:
-            content: 完整内容
-            section_name: 部分名称
-            
-        Returns:
-            提取的内容
-        """
-        lines = content.split('\n')
-        start_index = -1
-        end_index = -1
-        
-        for i, line in enumerate(lines):
-            if section_name in line:
-                start_index = i
-                break
-        
-        if start_index == -1:
-            return ""
-        
-        # 查找下一个部分开始
-        for i in range(start_index + 1, len(lines)):
-            if lines[i].startswith('## ') and '阶段' in lines[i]:
-                end_index = i
-                break
-        
-        if end_index == -1:
-            end_index = len(lines)
-        
-        return '\n'.join(lines[start_index:end_index])
+
     
     def generate_ai_instruction(self, task: str) -> str:
         """
