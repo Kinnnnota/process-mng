@@ -102,6 +102,9 @@ dmypy.json
 # IDE
 .vscode/
 .idea/
+.cursor/
+.cursorrules
+.claude/
 *.swp
 *.swo
 *~
