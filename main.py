@@ -19,7 +19,7 @@ def print_banner():
     print("🤖 AI驱动的项目开发流程管理系统")
     print("=" * 60)
     print("支持双模式管理：Developer Mode 和 Reviewer Mode")
-    print("阶段：BASIC_DESIGN → DETAIL_DESIGN → DEVELOPMENT → UNIT_TEST → INTEGRATION_TEST")
+    print("阶段：BASIC_DESIGN → DETAIL_DESIGN → DEVELOPMENT")
     print("=" * 60)
 
 
@@ -428,7 +428,7 @@ def main():
     
     parser.add_argument(
         "--phase", "-ph",
-        choices=["current", "basic_design", "detail_design", "development", "unit_test", "integration_test"],
+        choices=["current", "basic_design", "detail_design", "development"],
         default="current",
         help="指定阶段 (默认: current)"
     )

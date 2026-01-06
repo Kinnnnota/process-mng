@@ -15,6 +15,7 @@ from .models import (
 from .review_engine import ReviewEngine
 from .requirements_engine import RequirementsEngine
 from .issue_storage import IssueStorage
+from .ai_integration import AIIntegration
 
 
 class ProjectManager:
@@ -44,6 +45,9 @@ class ProjectManager:
 
         # 初始化Issue存储管理器
         self.issue_storage = IssueStorage(self.project_dir)
+
+        # 初始化AI集成
+        self.ai_integration = AIIntegration(project_name=project_name)
 
         # 加载或创建项目状态
         self.state = self._load_or_create_state()
@@ -173,7 +177,7 @@ class ProjectManager:
     
     def force_next_phase(self) -> None:
         """强制进入下一阶段"""
-        phase_order = [Phase.BASIC_DESIGN, Phase.DETAIL_DESIGN, Phase.DEVELOPMENT, Phase.UNIT_TEST, Phase.INTEGRATION_TEST]
+        phase_order = [Phase.BASIC_DESIGN, Phase.DETAIL_DESIGN, Phase.DEVELOPMENT]
         current_index = phase_order.index(self.state.current_phase)
         
         if current_index < len(phase_order) - 1:
@@ -437,23 +441,98 @@ class ProjectManager:
             json.dump(self.state.to_dict(), f, ensure_ascii=False, indent=2)
     
     def _execute_developer_phase(self) -> str:
-        """执行开发者模式任务"""
+        """
+        执行开发者模式任务 - 使用AI生成内容
+
+        Returns:
+            生成的内容
+        """
         phase = self.state.current_phase
         iteration = self.state.phase_iteration
-        
+
+        # 检查AI配置
+        if not self.ai_integration.validate_config():
+            raise RuntimeError(
+                "AI配置无效。请设置ANTHROPIC_API_KEY环境变量或创建.env文件。"
+                "参考.env.example文件进行配置。"
+            )
+
+        try:
+            # 获取项目上下文
+            context = self.ai_integration.get_current_context()
+
+            print(f"🤖 使用AI生成 {phase.value} 内容...")
+
+            # 使用AI生成内容
+            content = self.ai_integration.generate_content(
+                phase=phase,
+                context=context
+            )
+
+            # 保存生成的内容到文件
+            self._save_phase_output(content, phase, iteration)
+
+            print(f"✅ {phase.value} 内容生成完成")
+
+            return content
+
+        except Exception as e:
+            # 如果AI生成失败,回退到模板生成
+            print(f"⚠️  AI生成失败: {e}")
+            print(f"🔄 回退到模板生成...")
+            return self._generate_template_content(phase, iteration)
+
+    def _generate_template_content(self, phase: Phase, iteration: int) -> str:
+        """
+        使用模板生成内容(回退方案)
+
+        Args:
+            phase: 项目阶段
+            iteration: 迭代次数
+
+        Returns:
+            生成的模板内容
+        """
         if phase == Phase.BASIC_DESIGN:
             return self._generate_basic_design_document(iteration)
         elif phase == Phase.DETAIL_DESIGN:
             return self._generate_detail_design_document(iteration)
         elif phase == Phase.DEVELOPMENT:
             return self._generate_code_implementation(iteration)
-        elif phase == Phase.UNIT_TEST:
-            return self._generate_unit_test_cases(iteration)
-        elif phase == Phase.INTEGRATION_TEST:
-            return self._generate_integration_test_cases(iteration)
         else:
-            return "未知阶段"
-    
+            return f"# {phase.value} 模板内容\n\n待生成..."
+
+    def _save_phase_output(self, content: str, phase: Phase, iteration: int) -> None:
+        """
+        保存阶段输出到文件
+
+        Args:
+            content: 输出内容
+            phase: 项目阶段
+            iteration: 迭代次数
+        """
+        # 创建输出目录
+        output_dir = self.phase_outputs_dir / phase.value.lower()
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 根据阶段确定文件名和扩展名
+        if phase == Phase.BASIC_DESIGN:
+            filename = f"basic_design_v{iteration + 1}.md"
+        elif phase == Phase.DETAIL_DESIGN:
+            filename = f"detail_design_v{iteration + 1}.md"
+        elif phase == Phase.DEVELOPMENT:
+            filename = f"implementation_v{iteration + 1}.py"
+        else:
+            filename = f"output_v{iteration + 1}.md"
+
+        output_file = output_dir / filename
+
+        # 写入文件
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        print(f"📁 输出已保存: {output_file}")
+
     def _generate_basic_design_document(self, iteration: int) -> str:
         """生成基本设计文档"""
         content = f"""# {self.project_name} 基本设计文档 (第{iteration + 1}次迭代)
@@ -780,711 +859,6 @@ except Exception as e:
         
         return f"详细设计文档已生成：{design_file}"
     
-    def _generate_unit_test_cases(self, iteration: int) -> str:
-        """生成单元测试用例"""
-        content = f"""# {self.project_name} 单元测试用例 (第{iteration + 1}次迭代)
-
-import unittest
-from unittest.mock import Mock, patch
-import json
-import tempfile
-import os
-from pathlib import Path
-
-from project_manager import ProjectManager, ReviewEngine
-from project_manager.models import Phase, Mode, IssueLevel
-
-class TestProjectManager(unittest.TestCase):
-    \"\"\"项目管理器测试类\"\"\"
-    
-    def setUp(self):
-        \"\"\"测试前准备\"\"\"
-        self.test_project_name = "test_project"
-        self.manager = ProjectManager(self.test_project_name)
-    
-    def tearDown(self):
-        \"\"\"测试后清理\"\"\"
-        # 清理测试文件
-        test_dir = Path(f"project_manager/{{self.test_project_name}}")
-        if test_dir.exists():
-            import shutil
-            shutil.rmtree(test_dir)
-    
-    def test_project_initialization(self):
-        \"\"\"测试项目初始化\"\"\"
-        self.assertEqual(self.manager.project_name, self.test_project_name)
-        self.assertEqual(self.manager.state.current_phase, Phase.BASIC_DESIGN)
-        self.assertEqual(self.manager.state.phase_iteration, 0)
-        self.assertEqual(self.manager.state.current_mode, Mode.DEVELOPER)
-    
-    def test_mode_switching(self):
-        \"\"\"测试模式切换\"\"\"
-        # 测试切换到评审模式
-        self.manager.set_mode("reviewer")
-        self.assertEqual(self.manager.state.current_mode, Mode.REVIEWER)
-        
-        # 测试切换到开发模式
-        self.manager.set_mode("developer")
-        self.assertEqual(self.manager.state.current_mode, Mode.DEVELOPER)
-        
-        # 测试无效模式
-        with self.assertRaises(ValueError):
-            self.manager.set_mode("invalid_mode")
-    
-    def test_phase_execution(self):
-        \"\"\"测试阶段执行\"\"\"
-        # 开发模式执行
-        self.manager.set_mode("developer")
-        result = self.manager.execute_phase()
-        self.assertIn("基本设计文档已生成", result)
-        self.assertEqual(self.manager.state.status, "READY_FOR_REVIEW")
-        
-        # 评审模式执行
-        self.manager.set_mode("reviewer")
-        with self.assertRaises(ValueError):
-            self.manager.execute_phase()
-    
-    def test_phase_review(self):
-        \"\"\"测试阶段评审\"\"\"
-        # 准备测试数据
-        self.manager.set_mode("developer")
-        self.manager.execute_phase()
-        
-        # 切换到评审模式
-        self.manager.set_mode("reviewer")
-        review_result = self.manager.review_phase()
-        
-        # 验证评审结果
-        self.assertIn('score', review_result)
-        self.assertIn('issues', review_result)
-        self.assertIn('improvements', review_result)
-        self.assertIsInstance(review_result['score'], (int, float))
-        self.assertIsInstance(review_result['issues'], list)
-        self.assertIsInstance(review_result['improvements'], list)
-
-class TestReviewEngine(unittest.TestCase):
-    \"\"\"评审引擎测试类\"\"\"
-    
-    def setUp(self):
-        \"\"\"测试前准备\"\"\"
-        self.review_engine = ReviewEngine()
-    
-    def test_basic_design_evaluation(self):
-        \"\"\"测试基本设计评估\"\"\"
-        design_content = \"\"\"
-        # 项目基本设计文档
-        业务逻辑：实现一个项目管理系统
-        系统架构：模块化设计，包含管理器和引擎
-        数据库设计：用户表、项目表、评审表
-        外部接口：RESTful API设计
-        \"\"\"
-        
-        result = self.review_engine.evaluate(Phase.BASIC_DESIGN, design_content)
-        
-        self.assertIn('score', result)
-        self.assertIn('issues', result)
-        self.assertIn('improvements', result)
-        self.assertIn('checklist', result)
-        self.assertIsInstance(result['score'], (int, float))
-        self.assertGreater(result['score'], 0)
-    
-    def test_issue_classification(self):
-        \"\"\"测试问题分类\"\"\"
-        # 添加测试问题
-        self.review_engine._add_issue(IssueLevel.CRITICAL, "严重问题")
-        self.review_engine._add_issue(IssueLevel.MAJOR, "主要问题")
-        self.review_engine._add_issue(IssueLevel.MINOR, "次要问题")
-        
-        critical_issues = self.review_engine.get_critical_issues()
-        major_issues = self.review_engine.get_major_issues()
-        minor_issues = self.review_engine.get_minor_issues()
-        
-        self.assertEqual(len(critical_issues), 1)
-        self.assertEqual(len(major_issues), 1)
-        self.assertEqual(len(minor_issues), 1)
-
-if __name__ == '__main__':
-    # 运行测试
-    unittest.main(verbosity=2)
-"""
-        
-        # 保存测试文件
-        test_file = self.phase_outputs_dir / "unit_test" / f"unit_test_v{iteration + 1}.py"
-        with open(test_file, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        self.state.status = "READY_FOR_REVIEW"
-        self._save_state()
-        
-        return f"单元测试用例已生成：{test_file}"
-    
-    def _generate_integration_test_cases(self, iteration: int) -> str:
-        """生成集成测试用例"""
-        content = f"""# {self.project_name} 集成测试用例 (第{iteration + 1}次迭代)
-
-import unittest
-import json
-import tempfile
-import os
-from pathlib import Path
-import time
-
-from project_manager import ProjectManager, ReviewEngine
-from project_manager.models import Phase, Mode, IssueLevel
-
-class TestIntegration(unittest.TestCase):
-    \"\"\"集成测试类\"\"\"
-    
-    def setUp(self):
-        \"\"\"测试前准备\"\"\"
-        self.test_project_name = "integration_test"
-        self.manager = ProjectManager(self.test_project_name)
-    
-    def tearDown(self):
-        \"\"\"测试后清理\"\"\"
-        # 清理测试文件
-        test_dir = Path(f"project_manager/{{self.test_project_name}}")
-        if test_dir.exists():
-            import shutil
-            shutil.rmtree(test_dir)
-    
-    def test_full_workflow(self):
-        \"\"\"测试完整工作流程\"\"\"
-        # 1. 基本设计阶段
-        self.manager.set_mode("developer")
-        result = self.manager.execute_phase()
-        self.assertIn("基本设计文档已生成", result)
-        
-        self.manager.set_mode("reviewer")
-        review_result = self.manager.review_phase()
-        self.assertIsInstance(review_result['score'], (int, float))
-        
-        # 2. 强制进入下一阶段
-        self.manager.force_next_phase()
-        self.assertEqual(self.manager.state.current_phase, Phase.DETAIL_DESIGN)
-        
-        # 3. 详细设计阶段
-        self.manager.set_mode("developer")
-        result = self.manager.execute_phase()
-        self.assertIn("详细设计文档已生成", result)
-        
-        self.manager.set_mode("reviewer")
-        review_result = self.manager.review_phase()
-        self.assertIsInstance(review_result['score'], (int, float))
-        
-        # 4. 强制进入开发阶段
-        self.manager.force_next_phase()
-        self.assertEqual(self.manager.state.current_phase, Phase.DEVELOPMENT)
-        
-        # 5. 开发阶段
-        self.manager.set_mode("developer")
-        result = self.manager.execute_phase()
-        self.assertIn("代码实现已生成", result)
-        
-        self.manager.set_mode("reviewer")
-        review_result = self.manager.review_phase()
-        self.assertIsInstance(review_result['score'], (int, float))
-        
-        # 6. 强制进入单元测试阶段
-        self.manager.force_next_phase()
-        self.assertEqual(self.manager.state.current_phase, Phase.UNIT_TEST)
-        
-        # 7. 单元测试阶段
-        self.manager.set_mode("developer")
-        result = self.manager.execute_phase()
-        self.assertIn("单元测试用例已生成", result)
-        
-        self.manager.set_mode("reviewer")
-        review_result = self.manager.review_phase()
-        self.assertIsInstance(review_result['score'], (int, float))
-        
-        # 8. 强制进入集成测试阶段
-        self.manager.force_next_phase()
-        self.assertEqual(self.manager.state.current_phase, Phase.INTEGRATION_TEST)
-        
-        # 9. 集成测试阶段
-        self.manager.set_mode("developer")
-        result = self.manager.execute_phase()
-        self.assertIn("集成测试用例已生成", result)
-        
-        self.manager.set_mode("reviewer")
-        review_result = self.manager.review_phase()
-        self.assertIsInstance(review_result['score'], (int, float))
-        
-        # 10. 导出报告
-        report_file = self.manager.export_report()
-        self.assertTrue(Path(report_file).exists())
-    
-    def test_performance_integration(self):
-        \"\"\"性能集成测试\"\"\"
-        start_time = time.time()
-        
-        # 执行完整流程
-        self.test_full_workflow()
-        
-        end_time = time.time()
-        execution_time = end_time - start_time
-        
-        # 性能要求：完整流程应在30秒内完成
-        self.assertLess(execution_time, 30.0)
-        print(f"完整流程执行时间：{{execution_time:.2f}}秒")
-    
-    def test_data_persistence(self):
-        \"\"\"数据持久化测试\"\"\"
-        # 1. 创建项目并执行操作
-        self.manager.set_mode("developer")
-        self.manager.execute_phase()
-        
-        # 2. 检查状态文件是否存在
-        state_file = Path(f"project_manager/{{self.test_project_name}}/project_state.json")
-        self.assertTrue(state_file.exists())
-        
-        # 3. 检查状态文件内容
-        with open(state_file, 'r', encoding='utf-8') as f:
-            state_data = json.load(f)
-        
-        self.assertEqual(state_data['project_name'], self.test_project_name)
-        self.assertEqual(state_data['current_phase'], 'BASIC_DESIGN')
-        self.assertEqual(state_data['current_mode'], 'developer')
-    
-    def test_error_recovery(self):
-        \"\"\"错误恢复测试\"\"\"
-        # 1. 正常操作
-        self.manager.set_mode("developer")
-        result = self.manager.execute_phase()
-        self.assertIn("基本设计文档已生成", result)
-        
-        # 2. 模拟文件损坏
-        state_file = Path(f"project_manager/{{self.test_project_name}}/project_state.json")
-        with open(state_file, 'w', encoding='utf-8') as f:
-            f.write("invalid json content")
-        
-        # 3. 重新创建管理器（应该能恢复）
-        new_manager = ProjectManager(self.test_project_name)
-        self.assertEqual(new_manager.state.current_phase, Phase.BASIC_DESIGN)
-
-if __name__ == '__main__':
-    # 运行集成测试
-    unittest.main(verbosity=2)
-"""
-        
-        # 保存测试文件
-        test_file = self.phase_outputs_dir / "integration_test" / f"integration_test_v{iteration + 1}.py"
-        with open(test_file, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        self.state.status = "READY_FOR_REVIEW"
-        self._save_state()
-        
-        return f"集成测试用例已生成：{test_file}"
-    
-    def _generate_unit_test_cases(self, iteration: int) -> str:
-        """生成单元测试用例"""
-        content = f"""# {self.project_name} 单元测试用例 (第{iteration + 1}次迭代)
-
-import unittest
-from unittest.mock import Mock, patch
-import json
-import tempfile
-import os
-from pathlib import Path
-
-from project_manager import ProjectManager, ReviewEngine
-from project_manager.models import Phase, Mode, IssueLevel
-
-class TestProjectManager(unittest.TestCase):
-    \"\"\"项目管理器测试类\"\"\"
-    
-    def setUp(self):
-        \"\"\"测试前准备\"\"\"
-        self.test_project_name = "test_project"
-        self.manager = ProjectManager(self.test_project_name)
-    
-    def tearDown(self):
-        \"\"\"测试后清理\"\"\"
-        # 清理测试文件
-        test_dir = Path(f"project_manager/{{self.test_project_name}}")
-        if test_dir.exists():
-            import shutil
-            shutil.rmtree(test_dir)
-    
-    def test_project_initialization(self):
-        \"\"\"测试项目初始化\"\"\"
-        self.assertEqual(self.manager.project_name, self.test_project_name)
-        self.assertEqual(self.manager.state.current_phase, Phase.BASIC_DESIGN)
-        self.assertEqual(self.manager.state.phase_iteration, 0)
-        self.assertEqual(self.manager.state.current_mode, Mode.DEVELOPER)
-    
-    def test_mode_switching(self):
-        \"\"\"测试模式切换\"\"\"
-        # 测试切换到评审模式
-        self.manager.set_mode("reviewer")
-        self.assertEqual(self.manager.state.current_mode, Mode.REVIEWER)
-        
-        # 测试切换到开发模式
-        self.manager.set_mode("developer")
-        self.assertEqual(self.manager.state.current_mode, Mode.DEVELOPER)
-        
-        # 测试无效模式
-        with self.assertRaises(ValueError):
-            self.manager.set_mode("invalid_mode")
-    
-    def test_phase_execution(self):
-        \"\"\"测试阶段执行\"\"\"
-        # 开发模式执行
-        self.manager.set_mode("developer")
-        result = self.manager.execute_phase()
-        self.assertIn("基本设计文档已生成", result)
-        self.assertEqual(self.manager.state.status, "READY_FOR_REVIEW")
-        
-        # 评审模式执行
-        self.manager.set_mode("reviewer")
-        with self.assertRaises(ValueError):
-            self.manager.execute_phase()
-
-if __name__ == '__main__':
-    # 运行测试
-    unittest.main(verbosity=2)
-"""
-        
-        # 保存测试文件
-        test_file = self.phase_outputs_dir / "unit_test" / f"unit_test_v{iteration + 1}.py"
-        with open(test_file, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        self.state.status = "READY_FOR_REVIEW"
-        self._save_state()
-        
-        return f"单元测试用例已生成：{test_file}"
-    
-    def _generate_integration_test_cases(self, iteration: int) -> str:
-        """生成集成测试用例"""
-        content = f"""# {self.project_name} 集成测试用例 (第{iteration + 1}次迭代)
-
-import unittest
-import json
-import tempfile
-import os
-from pathlib import Path
-import time
-
-from project_manager import ProjectManager, ReviewEngine
-from project_manager.models import Phase, Mode, IssueLevel
-
-class TestIntegration(unittest.TestCase):
-    \"\"\"集成测试类\"\"\"
-    
-    def setUp(self):
-        \"\"\"测试前准备\"\"\"
-        self.test_project_name = "integration_test"
-        self.manager = ProjectManager(self.test_project_name)
-    
-    def tearDown(self):
-        \"\"\"测试后清理\"\"\"
-        # 清理测试文件
-        test_dir = Path(f"project_manager/{{self.test_project_name}}")
-        if test_dir.exists():
-            import shutil
-            shutil.rmtree(test_dir)
-    
-    def test_full_workflow(self):
-        \"\"\"测试完整工作流程\"\"\"
-        # 1. 基本设计阶段
-        self.manager.set_mode("developer")
-        result = self.manager.execute_phase()
-        self.assertIn("基本设计文档已生成", result)
-        
-        self.manager.set_mode("reviewer")
-        review_result = self.manager.review_phase()
-        self.assertIsInstance(review_result['score'], (int, float))
-        
-        # 2. 强制进入下一阶段
-        self.manager.force_next_phase()
-        self.assertEqual(self.manager.state.current_phase, Phase.DETAIL_DESIGN)
-
-if __name__ == '__main__':
-    # 运行集成测试
-    unittest.main(verbosity=2)
-"""
-        
-        # 保存测试文件
-        test_file = self.phase_outputs_dir / "integration_test" / f"integration_test_v{iteration + 1}.py"
-        with open(test_file, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        self.state.status = "READY_FOR_REVIEW"
-        self._save_state()
-        
-        return f"集成测试用例已生成：{test_file}"
-    
-    def _generate_test_cases(self, iteration: int) -> str:
-        """生成测试用例"""
-        content = f"""# {self.project_name} 测试用例 (第{iteration + 1}次迭代)
-
-import unittest
-from unittest.mock import Mock, patch
-import json
-import tempfile
-import os
-from pathlib import Path
-
-from project_manager import ProjectManager, ReviewEngine
-from project_manager.models import Phase, Mode, IssueLevel
-
-class TestProjectManager(unittest.TestCase):
-    \"\"\"项目管理器测试类\"\"\"
-    
-    def setUp(self):
-        \"\"\"测试前准备\"\"\"
-        self.test_project_name = "test_project"
-        self.manager = ProjectManager(self.test_project_name)
-    
-    def tearDown(self):
-        \"\"\"测试后清理\"\"\"
-        # 清理测试文件
-        test_dir = Path(f"project_manager/{{self.test_project_name}}")
-        if test_dir.exists():
-            import shutil
-            shutil.rmtree(test_dir)
-    
-    def test_project_initialization(self):
-        \"\"\"测试项目初始化\"\"\"
-        self.assertEqual(self.manager.project_name, self.test_project_name)
-        self.assertEqual(self.manager.state.current_phase, Phase.DESIGN)
-        self.assertEqual(self.manager.state.phase_iteration, 0)
-        self.assertEqual(self.manager.state.current_mode, Mode.DEVELOPER)
-    
-    def test_mode_switching(self):
-        \"\"\"测试模式切换\"\"\"
-        # 测试切换到评审模式
-        self.manager.set_mode("reviewer")
-        self.assertEqual(self.manager.state.current_mode, Mode.REVIEWER)
-        
-        # 测试切换到开发模式
-        self.manager.set_mode("developer")
-        self.assertEqual(self.manager.state.current_mode, Mode.DEVELOPER)
-        
-        # 测试无效模式
-        with self.assertRaises(ValueError):
-            self.manager.set_mode("invalid_mode")
-    
-    def test_phase_execution(self):
-        \"\"\"测试阶段执行\"\"\"
-        # 开发模式执行
-        self.manager.set_mode("developer")
-        result = self.manager.execute_phase()
-        self.assertIn("设计文档已生成", result)
-        self.assertEqual(self.manager.state.status, "READY_FOR_REVIEW")
-        
-        # 评审模式执行
-        self.manager.set_mode("reviewer")
-        with self.assertRaises(ValueError):
-            self.manager.execute_phase()
-    
-    def test_phase_review(self):
-        \"\"\"测试阶段评审\"\"\"
-        # 准备测试数据
-        self.manager.set_mode("developer")
-        self.manager.execute_phase()
-        
-        # 切换到评审模式
-        self.manager.set_mode("reviewer")
-        review_result = self.manager.review_phase()
-        
-        # 验证评审结果
-        self.assertIn('score', review_result)
-        self.assertIn('issues', review_result)
-        self.assertIn('improvements', review_result)
-        self.assertIsInstance(review_result['score'], (int, float))
-        self.assertIsInstance(review_result['issues'], list)
-        self.assertIsInstance(review_result['improvements'], list)
-    
-    def test_phase_transition(self):
-        \"\"\"测试阶段转换\"\"\"
-        # 初始状态
-        self.assertFalse(self.manager.check_phase_transition())
-        
-        # 模拟多次评审通过
-        for i in range(3):
-            self.manager.set_mode("developer")
-            self.manager.execute_phase()
-            self.manager.set_mode("reviewer")
-            self.manager.review_phase()
-        
-        # 检查是否可以进入下一阶段
-        can_transition = self.manager.check_phase_transition()
-        self.assertIsInstance(can_transition, bool)
-    
-    def test_force_next_phase(self):
-        \"\"\"测试强制进入下一阶段\"\"\"
-        initial_phase = self.manager.state.current_phase
-        self.manager.force_next_phase()
-        
-        # 验证阶段已转换
-        self.assertNotEqual(self.manager.state.current_phase, initial_phase)
-        self.assertEqual(self.manager.state.phase_iteration, 0)
-    
-    def test_error_handling(self):
-        \"\"\"测试错误处理\"\"\"
-        # 测试文件权限错误
-        with patch('builtins.open', side_effect=PermissionError("Permission denied")):
-            with self.assertRaises(PermissionError):
-                self.manager._save_state()
-        
-        # 测试JSON序列化错误
-        with patch('json.dump', side_effect=TypeError("Object not serializable")):
-            with self.assertRaises(TypeError):
-                self.manager._save_state()
-
-class TestReviewEngine(unittest.TestCase):
-    \"\"\"评审引擎测试类\"\"\"
-    
-    def setUp(self):
-        \"\"\"测试前准备\"\"\"
-        self.review_engine = ReviewEngine()
-    
-    def test_design_evaluation(self):
-        \"\"\"测试设计文档评估\"\"\"
-        design_content = \"\"\"
-        # 项目设计文档
-        需求：实现一个项目管理系统
-        架构：模块化设计，包含管理器和引擎
-        接口：RESTful API设计
-        扩展性：支持插件化扩展
-        异常：完善的错误处理机制
-        \"\"\"
-        
-        result = self.review_engine.evaluate(Phase.DESIGN, design_content)
-        
-        self.assertIn('score', result)
-        self.assertIn('issues', result)
-        self.assertIn('improvements', result)
-        self.assertIn('checklist', result)
-        self.assertIsInstance(result['score'], (int, float))
-        self.assertGreater(result['score'], 0)
-    
-    def test_code_evaluation(self):
-        \"\"\"测试代码评估\"\"\"
-        code_content = \"\"\"
-        def test_function():
-            \"\"\"测试函数\"\"\"
-            try:
-                result = 1 + 1
-                return result
-            except Exception as e:
-                print(f"错误：{{e}}")
-                return None
-        \"\"\"
-        
-        result = self.review_engine.evaluate(Phase.DEVELOP, code_content)
-        
-        self.assertIn('score', result)
-        self.assertIn('issues', result)
-        self.assertIn('improvements', result)
-        self.assertIsInstance(result['score'], (int, float))
-    
-    def test_test_evaluation(self):
-        \"\"\"测试测试用例评估\"\"\"
-        test_content = \"\"\"
-        def test_function():
-            \"\"\"测试函数\"\"\"
-            assert 1 + 1 == 2
-            assert "test" in "test_string"
-        
-        # 边界测试
-        def test_boundary():
-            assert len("") == 0
-            assert len("a") == 1
-        
-        # 异常测试
-        def test_exception():
-            try:
-                1 / 0
-            except ZeroDivisionError:
-                pass
-        \"\"\"
-        
-        result = self.review_engine.evaluate(Phase.TEST, test_content)
-        
-        self.assertIn('score', result)
-        self.assertIn('issues', result)
-        self.assertIn('improvements', result)
-        self.assertIsInstance(result['score'], (int, float))
-    
-    def test_score_calculation(self):
-        \"\"\"测试分数计算\"\"\"
-        checklist = {{
-            "需求覆盖": 85.0,
-            "架构合理性": 80.0,
-            "接口清晰": 85.0,
-            "可扩展性": 80.0,
-            "异常设计": 80.0
-        }}
-        
-        score = self.review_engine.calculate_score(checklist)
-        self.assertEqual(score, 410.0)
-    
-    def test_issue_classification(self):
-        \"\"\"测试问题分类\"\"\"
-        # 添加测试问题
-        self.review_engine._add_issue(IssueLevel.CRITICAL, "严重问题")
-        self.review_engine._add_issue(IssueLevel.BUG, "Bug问题")
-        self.review_engine._add_issue(IssueLevel.IMPROVEMENT, "改进建议")
-        
-        critical_issues = self.review_engine.get_critical_issues()
-        bug_issues = self.review_engine.get_bug_issues()
-        improvement_issues = self.review_engine.get_improvement_issues()
-        
-        self.assertEqual(len(critical_issues), 1)
-        self.assertEqual(len(bug_issues), 1)
-        self.assertEqual(len(improvement_issues), 1)
-    
-    def test_next_improvement(self):
-        \"\"\"测试获取下一个改进建议\"\"\"
-        # 没有改进建议时
-        improvement = self.review_engine.get_next_improvement()
-        self.assertEqual(improvement, "当前阶段工作质量良好，无需改进")
-        
-        # 有改进建议时
-        self.review_engine._add_issue(IssueLevel.IMPROVEMENT, "建议改进")
-        improvement = self.review_engine.get_next_improvement()
-        self.assertEqual(improvement, "建议改进")
-
-if __name__ == '__main__':
-    # 运行测试
-    unittest.main(verbosity=2)
-    
-    # 性能测试
-    import time
-    
-    def performance_test():
-        \"\"\"性能测试\"\"\"
-        start_time = time.time()
-        
-        manager = ProjectManager("performance_test")
-        for i in range(10):
-            manager.set_mode("developer")
-            manager.execute_phase()
-            manager.set_mode("reviewer")
-            manager.review_phase()
-        
-        end_time = time.time()
-        print(f"性能测试耗时：{{end_time - start_time:.2f}}秒")
-    
-    # 运行性能测试
-    performance_test()
-"""
-        
-        # 保存测试文件
-        test_file = self.phase_outputs_dir / "test" / f"test_cases_v{iteration + 1}.py"
-        with open(test_file, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        self.state.status = "READY_FOR_REVIEW"
-        self._save_state()
-        
-        return f"测试用例已生成：{test_file}"
-    
     def _read_phase_output(self) -> str:
         """读取当前阶段的输出文件"""
         phase_name = self.state.current_phase.value
@@ -1497,10 +871,6 @@ if __name__ == '__main__':
             file_patterns = [f"detail_design_v{iteration + 1}.md", f"{phase_name}.md"]
         elif self.state.current_phase == Phase.DEVELOPMENT:
             file_patterns = [f"implementation_v{iteration + 1}.py", f"{phase_name}.py", f"{phase_name}.md"]
-        elif self.state.current_phase == Phase.UNIT_TEST:
-            file_patterns = [f"unit_test_v{iteration + 1}.py", f"{phase_name}.py", f"{phase_name}.md"]
-        elif self.state.current_phase == Phase.INTEGRATION_TEST:
-            file_patterns = [f"integration_test_v{iteration + 1}.py", f"{phase_name}.py", f"{phase_name}.md"]
         else:
             file_patterns = [f"output_v{iteration + 1}.md", f"{phase_name}.md"]
         

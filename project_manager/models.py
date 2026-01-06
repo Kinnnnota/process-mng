@@ -9,11 +9,11 @@ from datetime import datetime
 
 
 class Phase(Enum):
-    """项目阶段枚举（简化版 - 仅包含核心开发阶段）"""
-    BASIC_DESIGN = "BASIC_DESIGN"
-    DETAIL_DESIGN = "DETAIL_DESIGN"
-    DEVELOPMENT = "DEVELOPMENT"
-    # UNIT_TEST 和 INTEGRATION_TEST 已移除 - 留待人工确认
+    """项目阶段枚举（3阶段流程）"""
+    BASIC_DESIGN = "BASIC_DESIGN"      # 基本设计：架构设计、数据库设计、接口定义
+    DETAIL_DESIGN = "DETAIL_DESIGN"    # 详细设计：类设计、算法设计、模块设计
+    DEVELOPMENT = "DEVELOPMENT"        # 开发实现：代码实现、注释、基本验证
+    # 注：测试代码应该在DEVELOPMENT阶段由AI生成，包括单元测试和集成测试代码
 
 
 class Mode(Enum):

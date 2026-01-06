@@ -1,8 +1,17 @@
 # AI驱动的项目开发流程管理系统
 # 依赖文件
 
-# 核心依赖（仅使用Python标准库）
-# 无需额外安装，系统自带
+# 核心依赖
+# 本项目使用Python标准库,不依赖第三方包
+# 所有API调用通过urllib.request实现,无需安装requests或anthropic SDK
+
+# 环境要求
+# Python 3.7+
+
+# 注意事项:
+# 1. 需要配置ANTHROPIC_API_KEY环境变量或创建.env文件
+# 2. .env文件格式参考.env.example
+# 3. 系统会自动从.env文件加载配置
 
 # 可选依赖（用于开发和测试）
 # pytest>=6.0.0          # 测试框架
